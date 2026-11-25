@@ -35,6 +35,27 @@ impl Driver {
     }
 }
 
+/// Menus open only on click, never by a resting pointer. Hovering a menu title (or another
+/// title while a menu is open) must not expand or switch menus. Regression for the report where
+/// a long Sequence menu was pushed up over the bar and covered the top-level titles.
+#[test]
+fn menu_titles_do_not_open_or_switch_on_hover() {
+    let mut d = Driver::new();
+    // Hovering a closed menu title does not open it.
+    d.ok("ui.move", json!({"id": "menu.Edit"}));
+    d.frames(3);
+    assert!(d.ok("ui.elements", json!({"prefix": "menu.edit.find"})).as_array().unwrap().is_empty());
+    // A click opens it.
+    d.click("menu.Edit");
+    d.frames(3);
+    assert!(!d.ok("ui.elements", json!({"prefix": "menu.edit.find"})).as_array().unwrap().is_empty());
+    // Hovering a different title while a menu is open does not switch menus.
+    d.ok("ui.move", json!({"id": "menu.Clip"}));
+    d.frames(3);
+    assert!(!d.ok("ui.elements", json!({"prefix": "menu.edit.find"})).as_array().unwrap().is_empty(), "the open menu stays open");
+    assert!(d.ok("ui.elements", json!({"prefix": "menu.clip.speedDuration"})).as_array().unwrap().is_empty(), "the hovered menu does not open");
+}
+
 #[test]
 fn menu_items_toggles_and_help() {
     let mut d = Driver::new();

@@ -2,6 +2,7 @@
 //! command table below (commands that only affect the frontend: tools, playback, zoom, panels).
 //! `invoke` is the single entry point used by menus, shortcuts and the control channel.
 
+use egui::{Popup, ScrollArea, TextWrapMode};
 use serde_json::{Value, json};
 
 use crate::FilmcraftApp;
@@ -1256,39 +1257,72 @@ pub fn menu_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
     let mut clicked: Option<String> = None;
     // The bar's titles and their menus share one size and colour, as in a native menu bar.
     egui::MenuBar::new().style(crate::theme::menu_style).config(egui::containers::menu::MenuConfig::new().style(crate::theme::menu_style)).ui(ui, |ui| {
-        let mut titles = Vec::with_capacity(MENUS.len());
         for top in MENUS {
             let mine: Vec<&MenuItem> = items.iter().filter(|i| i.path.first().map(String::as_str) == Some(top)).collect();
-            let r = ui.menu_button(app.ui.language.tr(top), |ui| {
-                ui.set_min_width(260.0);
-                if mine.is_empty() {
-                    ui.add_enabled(false, egui::Button::new(tl!("(empty)")));
-                }
-                menu_level(ui, &mine, 1, &mut clicked, &mut app.auto, &labels);
-            });
-            app.auto.add(&format!("menu.{top}"), r.response.rect, top);
-            titles.push(r.response);
+            let title = app.ui.language.tr(top);
+            let r = ui.add(egui::Button::new(title.clone()));
+            app.auto.add(&format!("menu.{top}"), r.rect, &title);
+            let room = menu_room(ui, &r);
+            Popup::menu(&r)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| {
+                    ui.set_min_width(260.0);
+                    if mine.is_empty() {
+                        ui.add_enabled(false, egui::Button::new(tl!("(empty)")));
+                    }
+                    menu_body(ui, room, |ui| menu_level(ui, &mine, 1, &mut clicked, &mut app.auto, &labels));
+                });
         }
-        switch_on_hover(ui.ctx(), &titles);
     });
     if let Some(id) = clicked {
         let _ = invoke(app, &ctx, &id, json!({}));
     }
 }
 
-/// Like a native menu bar (Windows, macOS): while one top-level menu is open, hovering another
-/// top-level title opens that menu instead (#1500). egui's `MenuBar` only switches on click.
-fn switch_on_hover(ctx: &egui::Context, titles: &[egui::Response]) {
-    let ids: Vec<egui::Id> = titles.iter().map(egui::Popup::default_response_id).collect();
-    let Some(open) = ids.iter().position(|id| egui::Popup::is_id_open(ctx, *id)) else { return };
-    // `hovered` is false where a popup covers the title (a tall submenu pushed up over the
-    // bar), so the pointer inside an open menu never switches it.
-    if let Some(i) = titles.iter().position(egui::Response::hovered)
-        && i != open
-    {
-        egui::Popup::open_id(ctx, ids[i]);
-        ctx.request_repaint();
+/// Space available below a menu button, used to cap its popup. Computed from the bar button,
+/// not the popup's own cursor: on the first frame egui sizes a popup in a sizing pass before it
+/// has a final position, and a height derived from that pass would push a long menu above the bar.
+fn menu_room(ui: &egui::Ui, button: &egui::Response) -> f32 {
+    let bounds = ui.ctx().content_rect();
+    (bounds.bottom() - button.rect.bottom() - 8.0).max(96.0)
+}
+
+/// Cap a menu popup to that space and make it scroll with the mouse wheel. Without this, a long
+/// menu grows past the bottom of the window and egui aligns it above the bar, covering the top
+/// level titles. The body keeps the menu's full width so checkmarks and shortcut columns line up
+/// after scrolling.
+fn menu_body(ui: &mut egui::Ui, room: f32, content: impl FnOnce(&mut egui::Ui)) {
+    ui.set_max_height(room);
+    ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+    ScrollArea::vertical().max_height(room).show(ui, content);
+}
+
+/// A submenu row that opens on click (or keyboard), never on hover. egui's stock `menu_button`
+/// expands a submenu as soon as the pointer rests on it; that is how a long menu can end up
+/// covering the bar. This button uses the same `Popup` machinery but only opens on an explicit
+/// click, and registers the open item with `MenuState` so the parent popup does not close when
+/// the pointer moves into the child.
+fn menu_submenu(ui: &mut egui::Ui, label: egui::WidgetText, content: impl FnOnce(&mut egui::Ui)) {
+    let r = ui.add(egui::Button::new(label).shortcut_text(">"));
+    let id = Popup::default_response_id(&r);
+    let room = menu_room(ui, &r);
+    let popup = Popup::menu(&r)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_min_width(220.0);
+            menu_body(ui, room, content);
+        });
+    // A plain `Popup` does not open submenus the way egui's `SubMenu` does; tell the parent menu
+    // whether a child is open so its own click-to-close logic stays out of the way, and so a
+    // chosen submenu item closes the whole menu on the same frame.
+    let open = popup.is_some();
+    let closing = popup.is_some_and(|inner| inner.response.should_close());
+    if closing {
+        ui.close();
     }
+    egui::containers::menu::MenuState::from_ui(ui, |state, _| {
+        state.open_item = (open && !closing).then_some(id);
+    });
 }
 
 /// One menu level: items whose path ends here, and a submenu (at its first item's position) for
@@ -1310,8 +1344,7 @@ fn menu_level(
             subs.push(sub);
             let inner: Vec<&MenuItem> = items.iter().copied().filter(|x| x.path.get(depth).map(String::as_str) == Some(sub)).collect();
             let language = ui.ctx().data(|d| d.get_temp::<crate::i18n::Language>(egui::Id::unique("interface-language"))).unwrap_or_default();
-            ui.menu_button(language.tr(sub), |ui| {
-                ui.set_min_width(220.0);
+            menu_submenu(ui, language.tr(sub).into(), |ui| {
                 menu_level(ui, &inner, depth + 1, clicked, auto, labels);
             });
         } else if menu_entry(ui, it, auto, labels) {
