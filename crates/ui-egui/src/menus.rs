@@ -1263,15 +1263,13 @@ pub fn menu_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
             let r = ui.add(egui::Button::new(title.clone()));
             app.auto.add(&format!("menu.{top}"), r.rect, &title);
             let room = menu_room(ui, &r);
-            Popup::menu(&r)
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show(|ui| {
-                    ui.set_min_width(260.0);
-                    if mine.is_empty() {
-                        ui.add_enabled(false, egui::Button::new(tl!("(empty)")));
-                    }
-                    menu_body(ui, room, |ui| menu_level(ui, &mine, 1, &mut clicked, &mut app.auto, &labels));
-                });
+            Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+                ui.set_min_width(260.0);
+                if mine.is_empty() {
+                    ui.add_enabled(false, egui::Button::new(tl!("(empty)")));
+                }
+                menu_body(ui, room, |ui| menu_level(ui, &mine, 1, &mut clicked, &mut app.auto, &labels));
+            });
         }
     });
     if let Some(id) = clicked {
@@ -1306,12 +1304,10 @@ fn menu_submenu(ui: &mut egui::Ui, label: egui::WidgetText, content: impl FnOnce
     let r = ui.add(egui::Button::new(label).shortcut_text(">"));
     let id = Popup::default_response_id(&r);
     let room = menu_room(ui, &r);
-    let popup = Popup::menu(&r)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|ui| {
-            ui.set_min_width(220.0);
-            menu_body(ui, room, content);
-        });
+    let popup = Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+        ui.set_min_width(220.0);
+        menu_body(ui, room, content);
+    });
     // A plain `Popup` does not open submenus the way egui's `SubMenu` does; tell the parent menu
     // whether a child is open so its own click-to-close logic stays out of the way, and so a
     // chosen submenu item closes the whole menu on the same frame.
