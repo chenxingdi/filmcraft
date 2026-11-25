@@ -1260,8 +1260,8 @@ pub fn menu_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
         for top in MENUS {
             let mine: Vec<&MenuItem> = items.iter().filter(|i| i.path.first().map(String::as_str) == Some(top)).collect();
             let title = app.ui.language.tr(top);
-            let r = ui.add(egui::Button::new(title.clone()));
-            app.auto.add(&format!("menu.{top}"), r.rect, &title);
+            let r = ui.add(egui::Button::new(title));
+            app.auto.add(&format!("menu.{top}"), r.rect, title);
             let room = menu_room(ui, &r);
             Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
                 ui.set_min_width(260.0);
